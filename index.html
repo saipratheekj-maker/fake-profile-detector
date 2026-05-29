@@ -1,0 +1,1228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ProfileSentinel — Fake Profile Detector</title>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Mono:ital,wght@0,400;0,700;1,400&family=Syne:wght@400;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Reset & Variables ─────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #07090f;
+      --surface:  #0d1117;
+      --panel:    #111827;
+      --border:   #1e2d3d;
+      --accent:   #00e5ff;
+      --accent2:  #7c3aed;
+      --danger:   #ff4444;
+      --safe:     #00c853;
+      --warn:     #ffab00;
+      --text:     #c9d1d9;
+      --muted:    #4a5568;
+      --font-mono: 'Space Mono', monospace;
+      --font-sans: 'Syne', sans-serif;
+      --glow-accent: 0 0 20px rgba(0,229,255,0.3);
+      --glow-danger: 0 0 20px rgba(255,68,68,0.4);
+      --glow-safe:   0 0 20px rgba(0,200,83,0.4);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-sans);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Noise overlay ─────────────────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
+      opacity: 0.6;
+    }
+
+    /* ── Scanlines ─────────────────────────────────────────────── */
+    body::after {
+      content: '';
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background: repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 2px,
+        rgba(0,0,0,0.03) 2px,
+        rgba(0,0,0,0.03) 4px
+      );
+    }
+
+    /* ── Grid background ───────────────────────────────────────── */
+    .grid-bg {
+      position: fixed; inset: 0; z-index: 0; pointer-events: none;
+      background-image:
+        linear-gradient(rgba(0,229,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(0,229,255,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+
+    /* ── Layout ────────────────────────────────────────────────── */
+    .wrapper {
+      position: relative; z-index: 1;
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 0 24px 80px;
+    }
+
+    /* ── Header ────────────────────────────────────────────────── */
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 28px 0 20px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .logo {
+      display: flex; align-items: center; gap: 12px;
+    }
+    .logo-icon {
+      width: 38px; height: 38px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 8px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 18px;
+    }
+    .logo-text {
+      font-size: 1.25rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      color: #fff;
+    }
+    .logo-text span { color: var(--accent); }
+
+    .status-pill {
+      font-family: var(--font-mono);
+      font-size: 0.7rem;
+      color: var(--safe);
+      border: 1px solid var(--safe);
+      padding: 4px 10px;
+      border-radius: 20px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .status-pill::before {
+      content: '';
+      width: 6px; height: 6px;
+      background: var(--safe);
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    /* ── Hero ──────────────────────────────────────────────────── */
+    .hero {
+      padding: 56px 0 40px;
+      text-align: center;
+    }
+    .hero-tag {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--accent);
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+    }
+    .hero h1 {
+      font-size: clamp(2.2rem, 5vw, 3.6rem);
+      font-weight: 800;
+      line-height: 1.1;
+      letter-spacing: -1px;
+      color: #fff;
+      margin-bottom: 16px;
+    }
+    .hero h1 em {
+      font-style: normal;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .hero p {
+      color: var(--muted);
+      font-size: 1rem;
+      max-width: 520px;
+      margin: 0 auto 28px;
+      line-height: 1.7;
+      font-family: var(--font-mono);
+    }
+
+    /* ── Demo buttons ──────────────────────────────────────────── */
+    .demo-strip {
+      display: flex; gap: 10px; justify-content: center; flex-wrap: wrap;
+      margin-bottom: 48px;
+    }
+    .demo-btn {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      color: var(--muted);
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 14px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .demo-btn:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+      box-shadow: 0 0 12px rgba(0,229,255,0.15);
+    }
+
+    /* ── Main card grid ─────────────────────────────────────────── */
+    .main-grid {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 20px;
+      align-items: start;
+    }
+    @media (max-width: 780px) {
+      .main-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ── Panel ──────────────────────────────────────────────────── */
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+    }
+    .panel-header {
+      display: flex; align-items: center; gap: 10px;
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      background: rgba(0,229,255,0.03);
+    }
+    .panel-header-icon {
+      font-size: 14px;
+      opacity: 0.7;
+    }
+    .panel-header-title {
+      font-size: 0.78rem;
+      font-family: var(--font-mono);
+      color: var(--accent);
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+    }
+
+    /* ── Form ──────────────────────────────────────────────────── */
+    form { padding: 22px; }
+
+    .form-section-label {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      color: var(--muted);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin: 18px 0 10px;
+    }
+    .form-section-label:first-child { margin-top: 0; }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 12px;
+    }
+    .form-group { margin-bottom: 12px; }
+    .form-group.full { grid-column: 1 / -1; }
+
+    label {
+      display: block;
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+      letter-spacing: 0.5px;
+    }
+
+    input[type="text"],
+    input[type="number"],
+    textarea {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      color: var(--text);
+      font-family: var(--font-mono);
+      font-size: 0.82rem;
+      padding: 9px 12px;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    input:focus, textarea:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(0,229,255,0.1);
+    }
+    textarea { resize: vertical; min-height: 64px; }
+
+    /* toggle row */
+    .toggle-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .toggle-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 7px;
+      padding: 8px 10px;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .toggle-item:hover { border-color: var(--accent); }
+    .toggle-item input[type="checkbox"] { display: none; }
+    .toggle-item .toggle-label {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      color: var(--muted);
+      pointer-events: none;
+    }
+    .toggle-indicator {
+      width: 14px; height: 14px;
+      border: 1.5px solid var(--border);
+      border-radius: 4px;
+      flex-shrink: 0;
+      transition: all 0.2s;
+    }
+    .toggle-item.active {
+      border-color: var(--accent);
+      background: rgba(0,229,255,0.05);
+    }
+    .toggle-item.active .toggle-indicator {
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+    .toggle-item.active .toggle-label { color: var(--accent); }
+
+    /* ── Analyze button ─────────────────────────────────────────── */
+    .analyze-btn {
+      width: 100%;
+      margin-top: 20px;
+      padding: 14px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border: none;
+      border-radius: 9px;
+      color: #fff;
+      font-family: var(--font-sans);
+      font-size: 0.95rem;
+      font-weight: 700;
+      cursor: pointer;
+      letter-spacing: 0.3px;
+      transition: opacity 0.2s, transform 0.15s, box-shadow 0.2s;
+      position: relative; overflow: hidden;
+    }
+    .analyze-btn:hover {
+      opacity: 0.92;
+      transform: translateY(-1px);
+      box-shadow: 0 6px 24px rgba(0,229,255,0.3);
+    }
+    .analyze-btn:active { transform: translateY(0); }
+    .analyze-btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; }
+
+    .btn-inner { display: flex; align-items: center; justify-content: center; gap: 8px; }
+
+    /* spinner */
+    .spinner {
+      width: 16px; height: 16px;
+      border: 2px solid rgba(255,255,255,0.3);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      display: none;
+    }
+    .analyze-btn.loading .spinner { display: block; }
+    .analyze-btn.loading .btn-label { opacity: 0.6; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Results panel ──────────────────────────────────────────── */
+    .results-panel {
+      position: sticky;
+      top: 20px;
+    }
+
+    .idle-state {
+      padding: 48px 24px;
+      text-align: center;
+    }
+    .idle-icon {
+      font-size: 3rem;
+      margin-bottom: 14px;
+      opacity: 0.3;
+    }
+    .idle-text {
+      font-family: var(--font-mono);
+      font-size: 0.78rem;
+      color: var(--muted);
+      line-height: 1.8;
+    }
+
+    /* verdict badge */
+    .verdict-area {
+      padding: 28px 22px 20px;
+      display: none;
+    }
+
+    .verdict-badge {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      padding: 14px;
+      border-radius: 10px;
+      margin-bottom: 22px;
+      font-weight: 700;
+      font-size: 1.05rem;
+      letter-spacing: 0.3px;
+    }
+    .verdict-badge.fake {
+      background: rgba(255,68,68,0.1);
+      border: 1.5px solid var(--danger);
+      color: var(--danger);
+      box-shadow: var(--glow-danger);
+    }
+    .verdict-badge.real {
+      background: rgba(0,200,83,0.1);
+      border: 1.5px solid var(--safe);
+      color: var(--safe);
+      box-shadow: var(--glow-safe);
+    }
+
+    /* gauge */
+    .gauge-wrap {
+      margin-bottom: 22px;
+    }
+    .gauge-labels {
+      display: flex;
+      justify-content: space-between;
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .gauge-track {
+      height: 8px;
+      background: var(--surface);
+      border-radius: 4px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+    }
+    .gauge-fill {
+      height: 100%;
+      width: 0%;
+      border-radius: 4px;
+      transition: width 1s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .gauge-fill.fake { background: linear-gradient(90deg, #ff4444, #ff6b6b); }
+    .gauge-fill.real { background: linear-gradient(90deg, #00c853, #69f0ae); }
+
+    .gauge-value {
+      font-family: var(--font-mono);
+      font-size: 2.2rem;
+      font-weight: 700;
+      text-align: center;
+      margin: 12px 0 4px;
+    }
+    .gauge-value.fake { color: var(--danger); }
+    .gauge-value.real { color: var(--safe); }
+    .gauge-sublabel {
+      font-family: var(--font-mono);
+      font-size: 0.68rem;
+      color: var(--muted);
+      text-align: center;
+      margin-bottom: 18px;
+    }
+
+    /* risk factors */
+    .section-title {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      color: var(--muted);
+      letter-spacing: 2px;
+      text-transform: uppercase;
+      margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .risk-list { list-style: none; margin-bottom: 20px; }
+    .risk-item {
+      display: flex; align-items: flex-start; gap: 8px;
+      font-family: var(--font-mono);
+      font-size: 0.73rem;
+      color: var(--warn);
+      padding: 6px 0;
+      border-bottom: 1px solid rgba(255,171,0,0.1);
+    }
+    .risk-item::before { content: '⚠'; flex-shrink: 0; margin-top: 1px; }
+    .risk-empty {
+      font-family: var(--font-mono);
+      font-size: 0.73rem;
+      color: var(--safe);
+      padding: 6px 0;
+      margin-bottom: 20px;
+    }
+    .risk-empty::before { content: '✓ '; }
+
+    /* feature importances */
+    .feature-bars { margin-bottom: 10px; }
+    .feature-bar-row {
+      display: flex; align-items: center; gap: 10px;
+      margin-bottom: 8px;
+    }
+    .feature-bar-label {
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      color: var(--muted);
+      width: 160px;
+      flex-shrink: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .feature-bar-track {
+      flex: 1;
+      height: 6px;
+      background: var(--surface);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .feature-bar-fill {
+      height: 100%;
+      background: linear-gradient(90deg, var(--accent2), var(--accent));
+      border-radius: 3px;
+      width: 0;
+      transition: width 0.8s ease;
+    }
+    .feature-bar-pct {
+      font-family: var(--font-mono);
+      font-size: 0.62rem;
+      color: var(--muted);
+      width: 36px;
+      text-align: right;
+    }
+
+    /* confidence tag */
+    .conf-tag {
+      display: inline-block;
+      font-family: var(--font-mono);
+      font-size: 0.65rem;
+      padding: 3px 8px;
+      border-radius: 20px;
+      border: 1px solid;
+      margin-top: 4px;
+    }
+    .conf-tag.high   { color: var(--accent); border-color: var(--accent); }
+    .conf-tag.medium { color: var(--warn);   border-color: var(--warn);   }
+    .conf-tag.low    { color: var(--muted);  border-color: var(--muted);  }
+
+    /* ── Metrics footer ─────────────────────────────────────────── */
+    .metrics-bar {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 1px;
+      background: var(--border);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin-top: 28px;
+    }
+    .metric-cell {
+      background: var(--panel);
+      padding: 18px 16px;
+      text-align: center;
+    }
+    .metric-value {
+      font-family: var(--font-mono);
+      font-size: 1.5rem;
+      font-weight: 700;
+      color: var(--accent);
+    }
+    .metric-label {
+      font-family: var(--font-mono);
+      font-size: 0.62rem;
+      color: var(--muted);
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-top: 4px;
+    }
+
+    /* ── Toast ──────────────────────────────────────────────────── */
+    #toast {
+      position: fixed; bottom: 28px; right: 28px;
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 12px 18px;
+      font-family: var(--font-mono);
+      font-size: 0.76rem;
+      color: var(--danger);
+      transform: translateY(80px);
+      opacity: 0;
+      transition: all 0.3s;
+      z-index: 100;
+    }
+    #toast.show { transform: translateY(0); opacity: 1; }
+
+    /* ── Animations ─────────────────────────────────────────────── */
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(10px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    .verdict-area { animation: fadeIn 0.4s ease; }
+
+
+    /* ── Tabs ───────────────────────────────────────────────────── */
+    .tabs { display:flex; gap:4px; border-bottom:1px solid var(--border); margin:36px 0 28px; }
+    .tab-btn { font-family:var(--font-mono); font-size:0.75rem; color:var(--muted); background:transparent; border:none; border-bottom:2px solid transparent; padding:10px 18px; cursor:pointer; letter-spacing:1px; text-transform:uppercase; transition:all 0.2s; margin-bottom:-1px; }
+    .tab-btn:hover { color:var(--text); }
+    .tab-btn.active { color:var(--accent); border-bottom-color:var(--accent); }
+    .tab-pane { display:none; }
+    .tab-pane.active { display:block; }
+    .history-controls { display:flex; gap:10px; align-items:center; flex-wrap:wrap; margin-bottom:16px; }
+    .history-controls input[type="text"] { flex:1; min-width:180px; }
+    .filter-btn { font-family:var(--font-mono); font-size:0.7rem; padding:8px 14px; border-radius:6px; border:1px solid var(--border); background:transparent; color:var(--muted); cursor:pointer; transition:all 0.2s; }
+    .filter-btn:hover,.filter-btn.active { border-color:var(--accent); color:var(--accent); }
+    .filter-btn.fake.active { border-color:var(--danger); color:var(--danger); }
+    .filter-btn.real.active { border-color:var(--safe); color:var(--safe); }
+    .history-table { width:100%; border-collapse:collapse; }
+    .history-table th { font-family:var(--font-mono); font-size:0.62rem; color:var(--muted); letter-spacing:1.5px; text-transform:uppercase; text-align:left; padding:10px 12px; border-bottom:1px solid var(--border); white-space:nowrap; }
+    .history-table td { font-family:var(--font-mono); font-size:0.75rem; color:var(--text); padding:11px 12px; border-bottom:1px solid rgba(255,255,255,0.04); vertical-align:middle; }
+    .history-table tr:hover td { background:rgba(0,229,255,0.03); }
+    .badge-fake { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.62rem; font-weight:700; letter-spacing:1px; background:rgba(255,68,68,0.15); color:var(--danger); border:1px solid rgba(255,68,68,0.3); }
+    .badge-real { display:inline-block; padding:2px 8px; border-radius:4px; font-size:0.62rem; font-weight:700; letter-spacing:1px; background:rgba(0,200,83,0.15); color:var(--safe); border:1px solid rgba(0,200,83,0.3); }
+    .prob-cell.high-fake { color:var(--danger); font-weight:700; }
+    .prob-cell.high-real { color:var(--safe); font-weight:700; }
+    .prob-cell.medium    { color:var(--warn); font-weight:700; }
+    .del-btn { background:transparent; border:1px solid rgba(255,68,68,0.3); color:var(--danger); border-radius:4px; padding:3px 8px; font-size:0.65rem; cursor:pointer; font-family:var(--font-mono); transition:all 0.2s; }
+    .del-btn:hover { background:rgba(255,68,68,0.1); }
+    .pagination { display:flex; align-items:center; justify-content:center; gap:8px; margin-top:18px; }
+    .pg-btn { font-family:var(--font-mono); font-size:0.7rem; padding:6px 14px; border:1px solid var(--border); background:transparent; color:var(--muted); border-radius:6px; cursor:pointer; transition:all 0.2s; }
+    .pg-btn:hover:not(:disabled) { border-color:var(--accent); color:var(--accent); }
+    .pg-btn:disabled { opacity:0.3; cursor:not-allowed; }
+    .pg-info { font-family:var(--font-mono); font-size:0.7rem; color:var(--muted); }
+    .empty-history { text-align:center; padding:48px 0; font-family:var(--font-mono); font-size:0.8rem; color:var(--muted); }
+    .stats-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:14px; margin-bottom:24px; }
+    .stat-card { background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:18px 16px; text-align:center; }
+    .stat-card-value { font-family:var(--font-mono); font-size:1.8rem; font-weight:700; color:var(--accent); }
+    .stat-card-label { font-family:var(--font-mono); font-size:0.62rem; color:var(--muted); letter-spacing:1px; text-transform:uppercase; margin-top:4px; }
+    .stat-card.danger .stat-card-value { color:var(--danger); }
+    .stat-card.safe .stat-card-value { color:var(--safe); }
+
+    /* ── Scrollbar ──────────────────────────────────────────────── */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ── Terminal line blinking cursor effect ───────────────────── */
+    .blink::after {
+      content: '|';
+      animation: blink-cur 1s step-end infinite;
+      color: var(--accent);
+      margin-left: 2px;
+    }
+    @keyframes blink-cur { 50% { opacity: 0; } }
+  </style>
+</head>
+<body>
+  <div class="grid-bg"></div>
+
+  <div class="wrapper">
+    <!-- HEADER -->
+    <header>
+      <div class="logo">
+        <div class="logo-icon">🛡️</div>
+        <span class="logo-text">Profile<span>Sentinel</span></span>
+      </div>
+      <div class="status-pill" id="statusPill">MODEL ONLINE</div>
+    </header>
+
+    <!-- HERO -->
+    <section class="hero">
+      <div class="hero-tag">// AI-POWERED ANALYSIS ENGINE v2.0</div>
+      <h1>Detect <em>Fake Profiles</em><br>with Machine Learning</h1>
+      <p>Analyze social media profiles using a trained Random Forest classifier.<br>Enter profile data below to get an instant authenticity verdict.</p>
+
+      <!-- Demo shortcuts -->
+      <div class="demo-strip" id="demoStrip">
+        <span style="font-family:var(--font-mono);font-size:0.7rem;color:var(--muted);align-self:center">DEMO PROFILES:</span>
+        <!-- filled by JS -->
+      </div>
+    </section>
+
+    <!-- MAIN GRID -->
+    <div class="main-grid">
+
+      <!-- LEFT: input form -->
+      <div class="panel">
+        <div class="panel-header">
+          <span class="panel-header-icon">📋</span>
+          <span class="panel-header-title">PROFILE INPUT</span>
+        </div>
+
+        <form id="profileForm">
+          <!-- Identity -->
+          <div class="form-section-label">IDENTITY</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>USERNAME</label>
+              <input type="text" id="username" placeholder="e.g. john_doe92" />
+            </div>
+            <div class="form-group">
+              <label>DISPLAY NAME</label>
+              <input type="text" id="display_name" placeholder="e.g. John Doe" />
+            </div>
+          </div>
+          <div class="form-group">
+            <label>BIO / DESCRIPTION</label>
+            <textarea id="bio" placeholder="Profile bio text..."></textarea>
+          </div>
+
+          <!-- Account Stats -->
+          <div class="form-section-label">ACCOUNT STATISTICS</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>FOLLOWERS</label>
+              <input type="number" id="followers_count" min="0" placeholder="0" />
+            </div>
+            <div class="form-group">
+              <label>FOLLOWING</label>
+              <input type="number" id="following_count" min="0" placeholder="0" />
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>TOTAL POSTS</label>
+              <input type="number" id="posts_count" min="0" placeholder="0" />
+            </div>
+            <div class="form-group">
+              <label>ACCOUNT AGE (DAYS)</label>
+              <input type="number" id="account_age_days" min="0" placeholder="0" />
+            </div>
+          </div>
+
+          <!-- Engagement -->
+          <div class="form-section-label">ENGAGEMENT METRICS</div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>AVG LIKES / POST</label>
+              <input type="number" id="avg_likes_per_post" min="0" step="0.1" placeholder="0" />
+            </div>
+            <div class="form-group">
+              <label>AVG COMMENTS / POST</label>
+              <input type="number" id="avg_comments_per_post" min="0" step="0.1" placeholder="0" />
+            </div>
+          </div>
+
+          <!-- Flags -->
+          <div class="form-section-label">PROFILE FLAGS</div>
+          <div class="toggle-row">
+            <div class="toggle-item" id="toggle_pic">
+              <span class="toggle-indicator"></span>
+              <span class="toggle-label">HAS PHOTO</span>
+            </div>
+            <div class="toggle-item" id="toggle_url">
+              <span class="toggle-indicator"></span>
+              <span class="toggle-label">EXTERNAL URL</span>
+            </div>
+            <div class="toggle-item" id="toggle_priv">
+              <span class="toggle-indicator"></span>
+              <span class="toggle-label">PRIVATE ACC.</span>
+            </div>
+          </div>
+
+          <button type="submit" class="analyze-btn" id="analyzeBtn">
+            <div class="btn-inner">
+              <div class="spinner" id="spinner"></div>
+              <span class="btn-label">🔍 ANALYZE PROFILE</span>
+            </div>
+          </button>
+        </form>
+      </div>
+
+      <!-- RIGHT: results -->
+      <div class="panel results-panel" id="resultsPanel">
+        <div class="panel-header">
+          <span class="panel-header-icon">📊</span>
+          <span class="panel-header-title">ANALYSIS RESULT</span>
+        </div>
+
+        <!-- Idle state -->
+        <div class="idle-state" id="idleState">
+          <div class="idle-icon">⚙️</div>
+          <div class="idle-text">
+            Enter profile data and click<br>
+            ANALYZE to run the ML model<br>
+            <br>
+            <span class="blink">awaiting input</span>
+          </div>
+        </div>
+
+        <!-- Results -->
+        <div class="verdict-area" id="verdictArea">
+
+          <!-- Badge -->
+          <div class="verdict-badge" id="verdictBadge"></div>
+
+          <!-- Probability gauge -->
+          <div class="gauge-wrap">
+            <div class="gauge-labels">
+              <span>AUTHENTICITY</span>
+              <span id="confTag"></span>
+            </div>
+            <div class="gauge-track">
+              <div class="gauge-fill" id="gaugeFill"></div>
+            </div>
+            <div class="gauge-value" id="gaugeValue">0%</div>
+            <div class="gauge-sublabel" id="gaugeSublabel">FAKE PROBABILITY</div>
+          </div>
+
+          <!-- Risk factors -->
+          <div class="section-title">RISK FACTORS DETECTED</div>
+          <ul class="risk-list" id="riskList"></ul>
+
+          <!-- Feature importances -->
+          <div class="section-title">TOP DECISION FEATURES</div>
+          <div class="feature-bars" id="featureBars"></div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- METRICS BAR -->
+    <div class="metrics-bar">
+      <div class="metric-cell">
+        <div class="metric-value">RF</div>
+        <div class="metric-label">MODEL TYPE</div>
+      </div>
+      <div class="metric-cell">
+        <div class="metric-value">16</div>
+        <div class="metric-label">FEATURES</div>
+      </div>
+      <div class="metric-cell">
+        <div class="metric-value">200</div>
+        <div class="metric-label">ESTIMATORS</div>
+      </div>
+    </div>
+  </div>
+
+    <!-- TABS -->
+    <div class="tabs">
+      <button class="tab-btn active" onclick="switchTab('analyze')">🔍 ANALYZE</button>
+      <button class="tab-btn" onclick="switchTab('history')">🗂️ HISTORY</button>
+      <button class="tab-btn" onclick="switchTab('stats')">📈 STATS</button>
+    </div>
+
+    <!-- HISTORY TAB -->
+    <div class="tab-pane" id="tab-history">
+      <div class="history-controls">
+        <input type="text" id="histSearch" placeholder="Search username..." oninput="loadHistory()" />
+        <button class="filter-btn" id="filterAll"  onclick="setFilter('')">ALL</button>
+        <button class="filter-btn fake" id="filterFake" onclick="setFilter('fake')">FAKE</button>
+        <button class="filter-btn real" id="filterReal" onclick="setFilter('real')">REAL</button>
+        <button class="filter-btn" onclick="loadHistory()" style="margin-left:auto">↻ REFRESH</button>
+      </div>
+      <div class="panel" style="overflow-x:auto">
+        <table class="history-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>USERNAME</th>
+              <th>FOLLOWERS</th>
+              <th>FOLLOWING</th>
+              <th>POSTS</th>
+              <th>VERDICT</th>
+              <th>FAKE %</th>
+              <th>TRUST</th>
+              <th>CONFIDENCE</th>
+              <th>ANALYZED</th>
+              <th>ACTION</th>
+            </tr>
+          </thead>
+          <tbody id="historyBody">
+            <tr><td colspan="11" class="empty-history">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="pagination">
+        <button class="pg-btn" id="pgPrev" onclick="changePage(-1)" disabled>← PREV</button>
+        <span class="pg-info" id="pgInfo">Page 1</span>
+        <button class="pg-btn" id="pgNext" onclick="changePage(1)">NEXT →</button>
+      </div>
+    </div>
+
+    <!-- STATS TAB -->
+    <div class="tab-pane" id="tab-stats">
+      <div class="stats-grid" id="statsGrid">
+        <div class="stat-card"><div class="stat-card-value" id="st-total">—</div><div class="stat-card-label">TOTAL ANALYZED</div></div>
+        <div class="stat-card danger"><div class="stat-card-value" id="st-fake">—</div><div class="stat-card-label">FAKE PROFILES</div></div>
+        <div class="stat-card safe"><div class="stat-card-value" id="st-real">—</div><div class="stat-card-label">REAL PROFILES</div></div>
+        <div class="stat-card"><div class="stat-card-value" id="st-avgfake">—</div><div class="stat-card-label">AVG FAKE PROB %</div></div>
+        <div class="stat-card"><div class="stat-card-value" id="st-avgtrust">—</div><div class="stat-card-label">AVG TRUST SCORE</div></div>
+        <div class="stat-card"><div class="stat-card-value" id="st-highconf">—</div><div class="stat-card-label">HIGH CONFIDENCE</div></div>
+      </div>
+      <div class="panel" style="padding:20px">
+        <div class="section-title">LAST 7 DAYS ACTIVITY</div>
+        <div id="trendArea" style="font-family:var(--font-mono);font-size:0.75rem;color:var(--muted);margin-top:12px">Loading...</div>
+      </div>
+    </div>
+
+
+  </div>
+
+  <!-- Toast -->
+  <div id="toast">⚠ Error connecting to API</div>
+
+  <script>
+    const API = '';   // empty = same origin (Flask serves this page)
+
+    /* ── Toggle checkboxes ──────────────────────────────────────── */
+    document.querySelectorAll('.toggle-item').forEach(item => {
+      item.addEventListener('click', () => {
+        item.classList.toggle('active');
+      });
+    });
+
+    /* ── Load demo profiles ─────────────────────────────────────── */
+    async function loadDemos() {
+      try {
+        const res = await fetch(`${API}/api/demo`);
+        if (!res.ok) return;
+        const demos = await res.json();
+        const strip = document.getElementById('demoStrip');
+        demos.forEach(d => {
+          const btn = document.createElement('button');
+          btn.className = 'demo-btn';
+          btn.textContent = d.label;
+          btn.onclick = () => fillForm(d);
+          strip.appendChild(btn);
+        });
+      } catch { /* silently skip if API not available */ }
+    }
+
+    function fillForm(data) {
+      setValue('username', data.username || '');
+      setValue('display_name', data.display_name || '');
+      setValue('bio', data.bio || '');
+      setValue('followers_count', data.followers_count ?? '');
+      setValue('following_count', data.following_count ?? '');
+      setValue('posts_count', data.posts_count ?? '');
+      setValue('account_age_days', data.account_age_days ?? '');
+      setValue('avg_likes_per_post', data.avg_likes_per_post ?? '');
+      setValue('avg_comments_per_post', data.avg_comments_per_post ?? '');
+      setToggle('toggle_pic',  data.has_profile_pic);
+      setToggle('toggle_url',  data.has_external_url);
+      setToggle('toggle_priv', data.is_private);
+    }
+
+    function setValue(id, val) {
+      const el = document.getElementById(id);
+      if (el) el.value = val;
+    }
+    function setToggle(toggleId, val) {
+      const el = document.getElementById(toggleId);
+      if (!el) return;
+      if (val) el.classList.add('active');
+      else     el.classList.remove('active');
+    }
+
+    /* ── Form submit ────────────────────────────────────────────── */
+    document.getElementById('profileForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const btn = document.getElementById('analyzeBtn');
+      btn.disabled = true;
+      btn.classList.add('loading');
+
+      const payload = {
+        username:             document.getElementById('username').value.trim(),
+        display_name:         document.getElementById('display_name').value.trim(),
+        bio:                  document.getElementById('bio').value.trim(),
+        followers_count:      parseInt(document.getElementById('followers_count').value) || 0,
+        following_count:      parseInt(document.getElementById('following_count').value) || 0,
+        posts_count:          parseInt(document.getElementById('posts_count').value) || 0,
+        account_age_days:     parseInt(document.getElementById('account_age_days').value) || 0,
+        avg_likes_per_post:   parseFloat(document.getElementById('avg_likes_per_post').value) || 0,
+        avg_comments_per_post:parseFloat(document.getElementById('avg_comments_per_post').value) || 0,
+        has_profile_pic:      document.getElementById('toggle_pic').classList.contains('active'),
+        has_external_url:     document.getElementById('toggle_url').classList.contains('active'),
+        is_private:           document.getElementById('toggle_priv').classList.contains('active'),
+      };
+
+      try {
+        const res = await fetch(`${API}/api/detect`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+        renderResults(data);
+      } catch (err) {
+        showToast(`Error: ${err.message}`);
+      } finally {
+        btn.disabled = false;
+        btn.classList.remove('loading');
+      }
+    });
+
+    /* ── Render results ─────────────────────────────────────────── */
+    function renderResults(data) {
+      const isFake = data.prediction === 'fake';
+      const pct    = data.fake_probability;
+
+      document.getElementById('idleState').style.display  = 'none';
+      const va = document.getElementById('verdictArea');
+      va.style.display = 'block';
+
+      // Badge
+      const badge = document.getElementById('verdictBadge');
+      badge.className = `verdict-badge ${isFake ? 'fake' : 'real'}`;
+      badge.innerHTML = isFake
+        ? '🚨 &nbsp;LIKELY FAKE PROFILE'
+        : '✅ &nbsp;LIKELY AUTHENTIC PROFILE';
+
+      // Gauge
+      const fill     = document.getElementById('gaugeFill');
+      const valEl    = document.getElementById('gaugeValue');
+      const subEl    = document.getElementById('gaugeSublabel');
+      fill.className = `gauge-fill ${isFake ? 'fake' : 'real'}`;
+      setTimeout(() => { fill.style.width = pct + '%'; }, 50);
+      valEl.className = `gauge-value ${isFake ? 'fake' : 'real'}`;
+      animateCount(valEl, 0, pct, 900, v => v.toFixed(1) + '%');
+      subEl.textContent = isFake ? 'FAKE PROBABILITY' : 'FAKE PROBABILITY (LOW)';
+
+      // Confidence tag
+      const confEl = document.getElementById('confTag');
+      confEl.className = `conf-tag ${data.confidence}`;
+      confEl.textContent = `CONFIDENCE: ${data.confidence.toUpperCase()}`;
+
+      // Risk factors
+      const rl = document.getElementById('riskList');
+      rl.innerHTML = '';
+      if (data.risk_factors && data.risk_factors.length) {
+        data.risk_factors.forEach(r => {
+          const li = document.createElement('li');
+          li.className = 'risk-item';
+          li.textContent = r;
+          rl.appendChild(li);
+        });
+      } else {
+        rl.innerHTML = '<li class="risk-empty">No significant risk factors detected</li>';
+      }
+
+      // Feature importances
+      const fb = document.getElementById('featureBars');
+      fb.innerHTML = '';
+      if (data.top_features) {
+        const maxImp = Math.max(...data.top_features.map(f => f[1]));
+        data.top_features.forEach(([name, imp]) => {
+          const pctBar = ((imp / maxImp) * 100).toFixed(1);
+          const row = document.createElement('div');
+          row.className = 'feature-bar-row';
+          row.innerHTML = `
+            <span class="feature-bar-label">${name.replace(/_/g, ' ')}</span>
+            <div class="feature-bar-track">
+              <div class="feature-bar-fill" style="width:0%" data-w="${pctBar}%"></div>
+            </div>
+            <span class="feature-bar-pct">${(imp * 100).toFixed(1)}%</span>
+          `;
+          fb.appendChild(row);
+        });
+        // Animate bars
+        setTimeout(() => {
+          document.querySelectorAll('.feature-bar-fill').forEach(el => {
+            el.style.width = el.dataset.w;
+          });
+        }, 100);
+      }
+
+      va.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    /* ── Helpers ────────────────────────────────────────────────── */
+    function animateCount(el, from, to, duration, fmt) {
+      const start = performance.now();
+      function step(now) {
+        const p = Math.min((now - start) / duration, 1);
+        el.textContent = fmt(from + (to - from) * easeOut(p));
+        if (p < 1) requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+    }
+    function easeOut(t) { return 1 - Math.pow(1 - t, 3); }
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 4000);
+    }
+
+    /* ── Health check ───────────────────────────────────────────── */
+    async function checkHealth() {
+      try {
+        const res  = await fetch(`${API}/api/health`);
+        const data = await res.json();
+        const pill = document.getElementById('statusPill');
+        if (data.model_loaded) {
+          pill.style.color = 'var(--safe)';
+          pill.style.borderColor = 'var(--safe)';
+          pill.textContent = '● MODEL ONLINE';
+        }
+      } catch {
+        const pill = document.getElementById('statusPill');
+        pill.style.color = 'var(--warn)';
+        pill.style.borderColor = 'var(--warn)';
+        pill.textContent = '● API OFFLINE';
+      }
+    }
+
+
+    /* ── Tab switching ──────────────────────────────────────────── */
+    let currentTab = 'analyze';
+    function switchTab(name) {
+      currentTab = name;
+      document.querySelectorAll('.tab-btn').forEach((b,i) => {
+        b.classList.toggle('active', ['analyze','history','stats'][i] === name);
+      });
+      document.getElementById('tab-history').classList.toggle('active', name === 'history');
+      document.getElementById('tab-stats').classList.toggle('active',   name === 'stats');
+      document.querySelector('.main-grid').style.display   = name === 'analyze' ? 'grid'  : 'none';
+      document.querySelector('.metrics-bar').style.display = name === 'analyze' ? 'grid'  : 'none';
+      if (name === 'history') loadHistory();
+      if (name === 'stats')   loadStats();
+    }
+
+    /* ── History ────────────────────────────────────────────────── */
+    let histPage = 1, histFilter = '';
+
+    function setFilter(val) {
+      histFilter = val;
+      histPage   = 1;
+      document.getElementById('filterAll').classList.toggle('active',  val === '');
+      document.getElementById('filterFake').classList.toggle('active', val === 'fake');
+      document.getElementById('filterReal').classList.toggle('active', val === 'real');
+      loadHistory();
+    }
+
+    function changePage(delta) {
+      histPage += delta;
+      loadHistory();
+    }
+
+    async function loadHistory() {
+      const search = document.getElementById('histSearch').value.trim();
+      const params = new URLSearchParams({
+        page: histPage, per_page: 15, search,
+        prediction: histFilter, sort_by: 'analyzed_at', sort_dir: 'desc'
+      });
+      const tbody = document.getElementById('historyBody');
+      tbody.innerHTML = '<tr><td colspan="11" class="empty-history">Loading...</td></tr>';
+      try {
+        const res  = await fetch(`${API}/api/profiles?${params}`);
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        renderHistoryTable(data);
+      } catch(e) {
+        tbody.innerHTML = `<tr><td colspan="11" class="empty-history" style="color:var(--danger)">Error: ${e.message}</td></tr>`;
+      }
+    }
+
+    function renderHistoryTable(data) {
+      const tbody = document.getElementById('historyBody');
+      if (!data.profiles || data.profiles.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="11" class="empty-history">No records found</td></tr>';
+      } else {
+        tbody.innerHTML = data.profiles.map(p => {
+          const isFake   = p.prediction === 'fake';
+          const probCls  = p.fake_probability > 70 ? (isFake ? 'high-fake':'high-real') : p.fake_probability > 40 ? 'medium' : 'high-real';
+          const dateStr  = p.analyzed_at ? p.analyzed_at.split(' ')[0] : '—';
+          return `<tr>
+            <td style="color:var(--muted)">#${p.id}</td>
+            <td style="color:#fff;font-weight:700">${p.username || '—'}</td>
+            <td>${(p.followers_count||0).toLocaleString()}</td>
+            <td>${(p.following_count||0).toLocaleString()}</td>
+            <td>${(p.posts_count||0).toLocaleString()}</td>
+            <td><span class="badge-${p.prediction}">${p.prediction.toUpperCase()}</span></td>
+            <td class="prob-cell ${probCls}">${p.fake_probability.toFixed(1)}%</td>
+            <td style="color:var(--accent)">${p.trust_score}</td>
+            <td style="color:var(--muted);text-transform:uppercase">${p.confidence}</td>
+            <td style="color:var(--muted)">${dateStr}</td>
+            <td><button class="del-btn" onclick="deleteProfile(${p.id}, this)">✕ DEL</button></td>
+          </tr>`;
+        }).join('');
+      }
+      // Pagination
+      document.getElementById('pgInfo').textContent = `Page ${data.page} of ${data.pages} (${data.total} total)`;
+      document.getElementById('pgPrev').disabled = data.page <= 1;
+      document.getElementById('pgNext').disabled = data.page >= data.pages;
+    }
+
+    async function deleteProfile(id, btn) {
+      if (!confirm('Delete this record?')) return;
+      btn.disabled = true;
+      try {
+        await fetch(`${API}/api/profiles/${id}`, { method: 'DELETE' });
+        loadHistory();
+      } catch(e) {
+        btn.disabled = false;
+        showToast('Delete failed: ' + e.message);
+      }
+    }
+
+    /* ── Stats ──────────────────────────────────────────────────── */
+    async function loadStats() {
+      try {
+        const res  = await fetch(`${API}/api/stats`);
+        const data = await res.json();
+        if (data.error) throw new Error(data.error);
+        document.getElementById('st-total').textContent    = data.total_analyzed   ?? '0';
+        document.getElementById('st-fake').textContent     = data.total_fake       ?? '0';
+        document.getElementById('st-real').textContent     = data.total_real       ?? '0';
+        document.getElementById('st-avgfake').textContent  = data.avg_fake_probability ?? '0';
+        document.getElementById('st-avgtrust').textContent = data.avg_trust_score  ?? '0';
+        document.getElementById('st-highconf').textContent = data.high_confidence_count ?? '0';
+
+        // Trend bars
+        const trend = data.daily_trend || [];
+        const trendEl = document.getElementById('trendArea');
+        if (!trend.length) { trendEl.textContent = 'No data yet'; return; }
+        const maxTotal = Math.max(...trend.map(d => d.total), 1);
+        trendEl.innerHTML = trend.map(d => {
+          const pct = Math.round((d.total / maxTotal) * 100);
+          return `<div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+            <span style="width:80px;color:var(--muted)">${d.day}</span>
+            <div style="flex:1;height:8px;background:var(--surface);border-radius:4px;overflow:hidden">
+              <div style="width:${pct}%;height:100%;background:linear-gradient(90deg,var(--accent2),var(--accent));border-radius:4px"></div>
+            </div>
+            <span style="width:60px;text-align:right">${d.total} total / <span style="color:var(--danger)">${d.fake} fake</span></span>
+          </div>`;
+        }).join('');
+      } catch(e) {
+        document.getElementById('trendArea').textContent = 'Error loading stats: ' + e.message;
+      }
+    }
+
+    loadDemos();
+    checkHealth();
+  </script>
+</body>
+</html>
