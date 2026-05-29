@@ -35,10 +35,10 @@ python app.py
 The server will:
 1. Auto-train the ML model on **8,000 synthetic profiles** (first run only, ~5 seconds)
 2. Save the model to `model.pkl`
-3. Start Flask on **http://127.0.0.1:5000**
+3. Start Flask on **http://127.0.0.1:5001**
 
 ### 3. Open the app
-Visit **http://127.0.0.1:5000** in your browser.
+Visit **http://127.0.0.1:5001** in your browser.
 
 ---
 
